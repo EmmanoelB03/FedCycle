@@ -73,5 +73,3 @@ For questions, suggestions, or collaboration:
 - **GitHub:** [https://github.com/EmmanoelB03](https://github.com/EmmanoelB03)
 
 ---
-
-Feel free to edit this README and customize it according to your project's objectives. If you want a more technical or descriptive text about how FedCycle works, provide more details about its purpose, architecture, or usage examples.
