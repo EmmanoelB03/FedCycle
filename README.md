@@ -1,4 +1,4 @@
-```markdown
+
 # 🔄 FedCycle: Federated Learning & TinyML on Constrained Edge Devices
 
 **FedCycle** is a complete, end-to-end architecture demonstrating the application of **Federated Learning (FL)** and **Tiny Machine Learning (TinyML)** directly on resource-constrained embedded systems (ESP32). 
