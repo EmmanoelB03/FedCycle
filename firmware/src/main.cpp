@@ -3,11 +3,13 @@
 #include <HTTPClient.h>
 
 // Importando apenas W2 e b2 do professor (5KB)
-#include "../pesos_classificacao.h"
+#include "pesos_classificacao.h"
+#include "dados_cliente0.h"
 
-const int INPUT_DIM = 2048;
+const int INPUT_DIM = 784;
 const int HIDDEN_DIM = 128;
 const int OUTPUT_DIM = 10;
+
 
 float* train_W1;
 float* train_b1;
@@ -22,7 +24,6 @@ float A2[OUTPUT_DIM];
 float dZ2[OUTPUT_DIM];
 
 const float learning_rate = 0.01;
-float dummy_features[INPUT_DIM];
 
 // --- GERADOR DETERMINÍSTICO PARA W1 e b1 (Evita o Boot Loop do Wokwi) ---
 void inicializar_pesos_deterministicos(float* W, int tamanho, uint32_t semente) {
@@ -84,8 +85,6 @@ void backward_pass(const float* X, int true_label) {
         }
         train_b2[i] -= learning_rate * dZ2[i];
     }
-
-    // Passos de atualização de W1 foram removidos. W1 agora atua como um extrator de características congelado.
 }
 
 void setup() {
@@ -130,32 +129,59 @@ void setup() {
     // =========================================================
     // ETAPA 2: TREINAMENTO LOCAL (On-Device)
     // =========================================================
-    // Agora que o Wi-Fi desligou, alocamos os Gigantes!
     train_W1 = (float*) ps_malloc(INPUT_DIM * HIDDEN_DIM * sizeof(float));
     train_b1 = (float*) ps_malloc(HIDDEN_DIM * sizeof(float));
     
     inicializar_pesos_deterministicos(train_W1, INPUT_DIM * HIDDEN_DIM, 42);
     inicializar_pesos_deterministicos(train_b1, HIDDEN_DIM, 43);
 
-    for (int i = 0; i < INPUT_DIM; i++) dummy_features[i] = (float)random(-100, 100) / 1000.0;
-
     Serial.println("\n--- Iniciando Treinamento Local ---");
-    int gabarito = 7; 
     
     float perda_final = 0.0;
     float acuracia_final = 0.0;
+    float certeza_final = 0.0;
+    
+    uint32_t tempo_inicio = millis();
     
     for (int epoca = 1; epoca <= 10; epoca++) {
-        forward_pass(dummy_features);
-        float perda = compute_loss(gabarito);
-        backward_pass(dummy_features, gabarito);
+        float perda_acumulada = 0.0;
+        float certeza_acumulada = 0.0;
+        int acertos = 0;
+
+        for (int s = 0; s < num_amostras_locais; s++) {
+            float input_features[INPUT_DIM];
+            for (int p = 0; p < INPUT_DIM; p++) {
+                input_features[p] = (float)dados_pixels[s][p] / 255.0f;
+            }
+
+            forward_pass(input_features);
+            perda_acumulada += compute_loss(labels_locais[s]);
+            backward_pass(input_features, labels_locais[s]);
+            certeza_acumulada += A2[labels_locais[s]] * 100.0;
+
+            // Calcula acerto real (argmax do softmax)
+            int predicao = 0;
+            float max_val = A2[0];
+            for (int i = 1; i < OUTPUT_DIM; i++) {
+                if (A2[i] > max_val) {
+                    max_val = A2[i];
+                    predicao = i;
+                }
+            }
+            if (predicao == labels_locais[s]) {
+                acertos++;
+            }
+        }
         
-        // Atualiza as métricas finais
-        perda_final = perda;
-        acuracia_final = A2[gabarito] * 100.0;
+        perda_final = perda_acumulada / num_amostras_locais;
+        certeza_final = certeza_acumulada / num_amostras_locais;
+        acuracia_final = ((float)acertos / num_amostras_locais) * 100.0f;
         
-        Serial.printf("Época %d | Perda: %.4f | Certeza: %.2f%%\n", epoca, perda_final, acuracia_final);
+        Serial.printf("Época %d | Perda Média: %.4f | Acurácia Real: %.2f%% | Certeza Média: %.2f%%\n", epoca, perda_final, acuracia_final, certeza_final);
     }
+    
+    uint32_t tempo_total = millis() - tempo_inicio;
+    uint32_t memoria_livre = ESP.getFreeHeap();
     
     Serial.println("Limpando a memória pesada (W1) para dar espaço ao Wi-Fi...");
     free(train_W1);
@@ -168,12 +194,13 @@ void setup() {
     WiFi.begin("Wokwi-GUEST", "", 6);
     while (WiFi.status() != WL_CONNECTED) { delay(500); Serial.print("."); }
 
-    http.begin("http://192.168.100.22:5000/atualizar_pesos"); // Lembre do seu IP!
+    http.begin("http://192.168.100.22:5000/atualizar_pesos"); 
     http.addHeader("Content-Type", "application/octet-stream");
-    
-    // Adicionamos as métricas nos Cabeçalhos HTTP
     http.addHeader("X-Loss", String(perda_final));
     http.addHeader("X-Accuracy", String(acuracia_final));
+    http.addHeader("X-Confidence", String(certeza_final));
+    http.addHeader("X-Training-Time", String(tempo_total));
+    http.addHeader("X-Memory-Usage", String(memoria_livre));
     
     int postCode = http.POST((uint8_t*)train_W2, HIDDEN_DIM * OUTPUT_DIM * sizeof(float));
     Serial.printf("Envio Concluído! Código HTTP: %d\n", postCode);

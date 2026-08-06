@@ -1,2 +1,12 @@
 .pio
 venv
+__pycache__
+server.log
+
+# Datasets and generated results
+data/
+scripts/data/
+assets/results/
+firmware/include/clientes/
+assets/models/*.npy
+assets/datasets/

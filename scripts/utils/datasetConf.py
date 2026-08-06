@@ -1,102 +1,86 @@
 import numpy as np
 from torchvision import datasets, transforms
 
-def preparar_cifar10_non_iid(num_clientes=100, classes_por_cliente=2):
+def preparar_dataset_non_iid(train_dataset, num_clientes, classes_por_cliente, nome_dataset):
     """
-    Baixa o CIFAR-10 e divide os dados de forma Não-IID.
-    Cada cliente receberá dados de exatamente 'classes_por_cliente' categorias.
+    Lógica genérica para dividir um dataset de forma Não-IID.
     """
-    print("Baixando e carregando o dataset CIFAR-10...")
-    # Transformação básica (converte imagem para Tensor)
-    transform = transforms.Compose([transforms.ToTensor()])
-    
-    # Baixa o dataset de treinamento (50.000 imagens)
-    train_dataset = datasets.CIFAR10(root='./data', train=True, download=True, transform=transform)
-    
-    # Extrai as labels (gabaritos) de todas as 50.000 imagens
-    labels = np.array(train_dataset.targets)
-    
-    # --- INÍCIO DA LÓGICA DE PARTIÇÃO (Método de Shards) ---
+    if hasattr(train_dataset, 'targets'):
+        labels = np.array(train_dataset.targets)
+    else:
+        labels = np.array(train_dataset.labels)
     
     num_amostras = len(labels)
-    # Calculamos o total de 'fatias' necessárias. 
-    # Ex: 100 clientes * 2 classes = 200 fatias.
     num_shards = num_clientes * classes_por_cliente
-    tamanho_shard = num_amostras // num_shards # 50.000 / 200 = 250 imagens por fatia
+    tamanho_shard = num_amostras // num_shards 
     
-    # Ordenamos os dados pela label. Assim, ficam todos os aviões juntos, depois carros, etc.
     indices_ordenados = np.argsort(labels)
-    
-    # Criamos uma lista com os IDs dos shards (0 a 199) e os embaralhamos
     shards_disponiveis = np.arange(num_shards)
     np.random.shuffle(shards_disponiveis)
     
-    # Dicionário para guardar quais índices pertencem a qual cliente
     dados_dos_clientes = {i: np.array([], dtype='int64') for i in range(num_clientes)}
     
-    print(f"\nDistribuindo dados para {num_clientes} clientes ({classes_por_cliente} classes/shards por cliente)...")
+    print(f"\nDistribuindo dados de {nome_dataset} para {num_clientes} clientes ({classes_por_cliente} classes/shards por cliente)...")
     
-    # Entregamos as fatias para os clientes
     for i in range(num_clientes):
-        # Pega 2 shards da lista embaralhada
         shards_do_cliente = shards_disponiveis[i * classes_por_cliente : (i + 1) * classes_por_cliente]
-        
         for shard in shards_do_cliente:
-            # Calcula o início e o fim dos índices reais do dataset para esse shard
             inicio = shard * tamanho_shard
             fim = inicio + tamanho_shard
-            
-            # Adiciona os índices das imagens ao 'balde' do cliente
             indices_fatia = indices_ordenados[inicio:fim]
             dados_dos_clientes[i] = np.concatenate((dados_dos_clientes[i], indices_fatia), axis=0)
-            
-        # Embaralha os dados dentro do cliente para não ficar tudo de uma classe, depois tudo de outra
         np.random.shuffle(dados_dos_clientes[i])
         
-    print("Distribuição concluída com sucesso!")
+    print(f"Distribuição de {nome_dataset} concluída com sucesso!")
     return train_dataset, dados_dos_clientes
 
+def preparar_cifar10_non_iid(num_clientes=100, classes_por_cliente=2):
+    print("Baixando e carregando o dataset CIFAR-10...")
+    transform = transforms.Compose([transforms.ToTensor()])
+    train_dataset = datasets.CIFAR10(root='./data', train=True, download=True, transform=transform)
+    return preparar_dataset_non_iid(train_dataset, num_clientes, classes_por_cliente, "CIFAR-10")
+
+def preparar_mnist_non_iid(num_clientes=100, classes_por_cliente=2):
+    print("Baixando e carregando o dataset MNIST...")
+    transform = transforms.Compose([transforms.ToTensor()])
+    train_dataset = datasets.MNIST(root='./data', train=True, download=True, transform=transform)
+    return preparar_dataset_non_iid(train_dataset, num_clientes, classes_por_cliente, "MNIST")
     
-def exportar_amostra_para_c(dataset, indices_cliente, num_amostras=5, nome_arquivo="dados_cliente0.h"):
+def exportar_amostra_para_c(dataset, indices_cliente, num_amostras=5, nome_arquivo="dados_cliente0.h", max_pixels=2048):
     print(f"\nExportando {num_amostras} amostras para o simulador Wokwi (C++)...")
-    
-    # Seleciona apenas as primeiras N imagens do cliente
     indices_amostra = indices_cliente[:num_amostras]
     
     with open(nome_arquivo, 'w') as f:
         f.write("#ifndef DADOS_CLIENTE_H\n")
         f.write("#define DADOS_CLIENTE_H\n\n")
-        
         f.write(f"// Total de imagens embutidas na memoria flash: {num_amostras}\n")
         f.write(f"const int num_amostras_locais = {num_amostras};\n\n")
         
-        # O CIFAR-10 tem imagens de 3 canais (RGB) de 32x32 pixels = 3072 valores por imagem
-        f.write(f"const unsigned char dados_pixels[{num_amostras}][3072] = {{\n")
+        # O tamanho do array deve ser consistente com INPUT_DIM no firmware
+        f.write(f"const unsigned char dados_pixels[{num_amostras}][{max_pixels}] = {{\n")
         
         labels_amostra = []
-        
         for idx in indices_amostra:
-            # Pega a imagem (Tensor) e o gabarito (label)
             imagem, label = dataset[idx] 
             labels_amostra.append(label)
-            
-            # Converte de Tensor (0.0 a 1.0) para Pixels Inteiros (0 a 255)
-            # O .flatten() transforma a matriz 3x32x32 em uma linha reta de 3072 números
             pixels_numpy = (imagem.numpy() * 255).astype(int).flatten()
             
-            # Formata os números separados por vírgula para a sintaxe do C++
+            # Ajuste de tamanho para bater com max_pixels do firmware
+            if len(pixels_numpy) > max_pixels:
+                pixels_numpy = pixels_numpy[:max_pixels]
+            elif len(pixels_numpy) < max_pixels:
+                pixels_numpy = np.pad(pixels_numpy, (0, max_pixels - len(pixels_numpy)), 'constant')
+            
             pixels_str = ", ".join(map(str, pixels_numpy))
             f.write(f"    {{{pixels_str}}},\n")
             
         f.write("};\n\n")
-        
-        # Salva também os gabaritos (as respostas corretas)
         labels_str = ", ".join(map(str, labels_amostra))
         f.write(f"const int labels_locais[{num_amostras}] = {{{labels_str}}};\n\n")
-        
         f.write("#endif // DADOS_CLIENTE_H\n")
         
-    print(f"Sucesso! Arquivo '{nome_arquivo}' gerado na sua pasta.")
+    print(f"Sucesso! Arquivo '{nome_arquivo}' gerado.")
+
 
 # --- Cole isso lá no final do seu bloco __main__ ---
 # exportar_amostra_para_c(dataset, dict_clientes[0], num_amostras=5)

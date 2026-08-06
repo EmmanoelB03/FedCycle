@@ -1,22 +1,26 @@
 import torch
 import numpy as np
+import os
+import sys
+
+# Adiciona a pasta de treinamento ao path para encontrar o modelo
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'training')))
 from fedcycle_model import ModeloFedCycle
 
 def exportar_pesos_para_cpp():
     print("Carregando o modelo destilado...")
-    # Instanciamos o modelo. Em um cenário real de execução, você carregaria 
-    # os pesos que acabaram de sair da Destilação Bidirecional aqui.
     modelo_cliente = ModeloFedCycle()
-    
-    # Vamos acessar especificamente a camada de classificação:
-    # classificacao[0] = Camada Linear (2048 -> 128)
-    # classificacao[1] = ReLU
-    # classificacao[2] = Camada Linear (128 -> 10)
     
     camada1 = modelo_cliente.classificacao[0]
     camada2 = modelo_cliente.classificacao[2]
     
-    nome_arquivo = "pesos_classificacao.h"
+    # Caminho atualizado para a pasta do firmware
+    output_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', 'firmware', 'include'))
+    nome_arquivo = os.path.join(output_dir, "pesos_classificacao.h")
+    
+    if not os.path.exists(output_dir):
+        os.makedirs(output_dir)
+
     print(f"\nExtraindo as matrizes matemáticas para '{nome_arquivo}'...")
     
     with open(nome_arquivo, 'w') as f:
