@@ -17,9 +17,9 @@ INPUT_DIM     = 784
 LEARNING_RATE = 0.05  # LR inicial
 LR_DECAY      = 0.96  # fator multiplicativo por rodada
 LR_MIN        = 0.01  # floor — LR nunca cai abaixo disso
-MU            = 0.01  # coeficiente proximal FedProx — ancora clientes ao modelo global
+MU            = 0.001  # coeficiente proximal FedProx — ancora clientes ao modelo global
 
-# W1 congelada — simula o firmware real (W1 fixa no ESP32)
+# W1 congelada — simula o firmware real (W1 fixa no ESP32) por conta do curto espaço no ESP32
 np.random.seed(42)
 W1_GLOBAL = np.random.randn(HIDDEN_DIM, INPUT_DIM) * 0.05
 
@@ -46,8 +46,8 @@ def simular_treinamento_real(pesos_globais, indices, dataset, lr=0.05):
     # Embaralha e separa treino/validação — conjuntos disjuntos
     indices_copy = indices.copy()
     np.random.shuffle(indices_copy)
-    indices_treino = indices_copy[:20]    # 20 amostras para treinar
-    indices_val    = indices_copy[20:60]  # 40 amostras nunca vistas no treino
+    indices_treino = indices_copy[:250]    # 250 amostras para treinar
+    indices_val    = indices_copy[250:500]  # 250 amostras nunca vistas no treino
 
     # ── Treinamento — 5 épocas locais com FedProx ──
     for _ in range(5):
