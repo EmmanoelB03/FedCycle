@@ -27,11 +27,11 @@ def destilacao_global_para_local(modelo_global, modelo_local, dados_sinteticos, 
     """
     print("\n--- Iniciando Destilação Global -> Local ---")
     
-    # Congelamos a camada de classificação do modelo local [cite: 216]
+    # Congelamos a camada de classificação do modelo local 
     for param in modelo_local.classificacao.parameters():
         param.requires_grad = False
         
-    # Otimizador apenas para a camada de REPRESENTAÇÃO do modelo local [cite: 219-221]
+    # Otimizador apenas para a camada de REPRESENTAÇÃO do modelo local
     otimizador = optim.SGD(modelo_local.representacao.parameters(), lr=lr)
     
     # O artigo FedBKD sugere 4 épocas para essa via 
@@ -45,11 +45,11 @@ def destilacao_global_para_local(modelo_global, modelo_local, dados_sinteticos, 
         # O aluno tenta extrair as características
         features_locais = modelo_local.representacao(dados_sinteticos)
         
-        # Equação 14 do FedBKD: Perda = KL[Theta_R_local, Theta_R_global] [cite: 217]
+        # Equação 14 do FedBKD: Perda = KL[Theta_R_local, Theta_R_global] 
         perda_i_g = divergencia_kl_features(features_locais, features_globais)
         
         perda_i_g.backward()
-        otimizador.step() # Atualiza o aluno (Equação 15) [cite: 220-221]
+        otimizador.step() # Atualiza o aluno (Equação 15) 
         
     print(f"Destilação G->L concluída. Perda final: {perda_i_g.item():.4f}")
     
@@ -63,7 +63,7 @@ def destilacao_local_para_global(modelo_local, modelo_global, dados_sinteticos, 
     """
     print("\n--- Iniciando Destilação Local -> Global ---")
     
-    # Congelamos a camada de classificação do modelo global para manter generalização [cite: 226, 234]
+    # Congelamos a camada de classificação do modelo global para manter generalização 
     for param in modelo_global.classificacao.parameters():
         param.requires_grad = False
         
@@ -81,11 +81,11 @@ def destilacao_local_para_global(modelo_local, modelo_global, dados_sinteticos, 
         # O professor global (agora como aluno) tenta imitar
         features_globais = modelo_global.representacao(dados_sinteticos)
         
-        # Equação 17 do FedBKD: Perda = KL[Theta_R_global, Theta_R_local] [cite: 228]
+        # Equação 17 do FedBKD: Perda = KL[Theta_R_global, Theta_R_local] 
         perda_g_i = divergencia_kl_features(features_globais, features_locais)
         
         perda_g_i.backward()
-        otimizador.step() # Atualiza o global (Equação 18) [cite: 230]
+        otimizador.step() # Atualiza o global (Equação 18) 
         
     print(f"Destilação L->G concluída. Perda final: {perda_g_i.item():.4f}")
 
